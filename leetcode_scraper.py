@@ -71,16 +71,22 @@ class LeetcodeScraper:
             titleSlug
             content
             difficulty
+            stats
+            companyTagStats
             topicTags {
               name
               slug
             }
+            similarQuestions
             codeSnippets {
               lang
               langSlug
               code
             }
             sampleTestCase
+            likes
+            dislikes
+            discussionCount
           }
         }
         """
@@ -163,22 +169,84 @@ class LeetcodeScraper:
         
         print(f"Total detailed problems retrieved: {len(detailed_problems)}")
         return detailed_problems
+    
+    def get_problems_by_id_range(self, start_id=2200, end_id=2800):
+        """Get problems with frontend IDs in a specific range"""
+        all_problems = self.get_all_problems()
+        
+        if not all_problems:
+            print("No problem list retrieved, cannot get problems by ID range")
+            return []
+        
+        # Filter problems by frontend ID in the specified range
+        try:
+            filtered_problems = []
+            for problem in all_problems:
+                try:
+                    frontend_id = int(problem.get("questionFrontendId", "0"))
+                    if start_id <= frontend_id <= end_id:
+                        filtered_problems.append(problem)
+                except ValueError:
+                    # Skip if frontend ID is not a number
+                    continue
+                    
+            print(f"Found {len(filtered_problems)} problems with IDs between {start_id} and {end_id}")
+        except Exception as e:
+            print(f"Error filtering problems by ID range: {e}")
+            return []
+        
+        # Get detailed information
+        detailed_problems = []
+        for problem in filtered_problems:
+            title = problem.get("title", "Unknown Problem")
+            title_slug = problem.get("titleSlug", "")
+            frontend_id = problem.get("questionFrontendId", "Unknown ID")
+            print(f"Fetching details for problem {frontend_id}: {title}")
+            
+            if not title_slug:
+                print(f"Problem {title} has no titleSlug, skipping")
+                continue
+                
+            detail = self.get_problem_detail(title_slug)
+            if detail:
+                detailed_problems.append(detail)
+                print(f"Successfully fetched details for: {title}")
+            else:
+                print(f"Failed to fetch details for: {title}")
+            time.sleep(1)  # Avoid too frequent requests
+        
+        print(f"Total detailed problems retrieved: {len(detailed_problems)}")
+        return detailed_problems
 
 def main():
     scraper = LeetcodeScraper()
     
-    print("Starting to fetch latest LeetCode problems...")
+    print("Starting LeetCode Problem Scraper...")
     
     try:
-        # Get the latest 50 problems
-        latest_problems = scraper.get_latest_problems(50)
+        # Choose one of the following methods:
+        
+        # Option 1: Get the latest 50 problems
+        # latest_problems = scraper.get_latest_problems(50)
+        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # filename = f"leetcode_latest_problems_{timestamp}.json"
+        
+        # Option 2: Get problems with IDs between 2200 and 2210 (only 10 problems for testing)
+        start_id = 2200
+        end_id = 2210
+        problems = scraper.get_problems_by_id_range(start_id, end_id)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"leetcode_problems_{start_id}_to_{end_id}_{timestamp}.json"
         
         # Save to JSON file
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"leetcode_latest_problems_{timestamp}.json"
-        scraper.save_to_json(latest_problems, filename)
+        scraper.save_to_json(problems, filename)
         
         print(f"Scraping completed, results saved to {filename}")
+        
+        # Create a marker file to indicate this is the latest scrape
+        with open("latest_scrape_file.txt", "w") as f:
+            f.write(filename)
+            
     except Exception as e:
         print(f"Error during scraping process: {e}")
 

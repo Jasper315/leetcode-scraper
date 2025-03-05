@@ -29,6 +29,13 @@ wheels/
 .env
 .venv
 
+# Output files (can be regenerated)
+leetcode_latest_problems_*.json
+leetcode_problems_*.json
+*_transformed.json
+*_transformed.csv
+latest_scrape_file.txt
+
 # Editor directories and files
 .idea/
 .vscode/
