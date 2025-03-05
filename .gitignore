@@ -29,9 +29,6 @@ wheels/
 .env
 .venv
 
-# Output files (can be regenerated)
-leetcode_latest_problems_*.json
-
 # Editor directories and files
 .idea/
 .vscode/
