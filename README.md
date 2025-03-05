@@ -107,7 +107,15 @@ If you encounter issues:
 If you find bugs or have suggestions for improvements, please feel free to contribute by submitting issues or pull requests.
 
 ## License
-- Do not run this script too frequently to avoid straining the LeetCode server
-- The script will have a 1 second delay when requesting question details to avoid too frequent requests
-- LeetCode may change its API structure, and you may need to update your GraphQL query if the script does not work properly
-- This project is for educational purposes. Use responsibly and respect LeetCode's terms of service. 
+- This project is for educational purposes. Use responsibly and respect LeetCode's terms of service.
+
+## Disclaimer
+
+This project is for educational purposes only. It demonstrates how to interact with web APIs programmatically. 
+
+Please use this tool responsibly:
+- Do not make excessive requests to LeetCode's servers
+- Respect LeetCode's rate limits and terms of service
+- Consider the impact on their infrastructure
+
+The author(s) of this project are not responsible for any misuse of this code or potential violations of LeetCode's terms of service. 
