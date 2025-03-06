@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import glob
 from datetime import datetime
 
 def extract_stats(stats_str):
@@ -54,6 +55,37 @@ def extract_company_tags(company_tags_str):
         print(f"Company tags string: {company_tags_str}")
         return []
 
+def extract_similar_questions(similar_questions_str):
+    """Extract similar questions into a readable format"""
+    if not similar_questions_str:
+        return []
+    
+    try:
+        # Similar questions are usually stored as a JSON string
+        similar_questions = json.loads(similar_questions_str)
+        
+        # Format each similar question for readability
+        formatted_questions = []
+        for question in similar_questions:
+            title = question.get("title", "")
+            difficulty = question.get("difficulty", "")
+            title_slug = question.get("titleSlug", "")
+            
+            # Format as "Title [Difficulty]"
+            formatted_question = f"{title} [{difficulty}]"
+            
+            # Add URL if title_slug is available
+            if title_slug:
+                formatted_question += f": https://leetcode.com/problems/{title_slug}/"
+                
+            formatted_questions.append(formatted_question)
+            
+        return formatted_questions
+    except Exception as e:
+        print(f"Error extracting similar questions: {e}")
+        print(f"Similar questions string: {similar_questions_str}")
+        return []
+
 def transform_leetcode_data(input_file, output_file):
     """Transform LeetCode JSON data into a more structured format"""
     with open(input_file, 'r', encoding='utf-8') as f:
@@ -87,6 +119,10 @@ def transform_leetcode_data(input_file, output_file):
         likes = problem.get("likes", 0)
         dislikes = problem.get("dislikes", 0)
         
+        # Extract similar questions
+        similar_questions_str = problem.get("similarQuestions")
+        similar_questions = extract_similar_questions(similar_questions_str)
+        
         # Create the transformed problem entry
         transformed_problem = {
             "Id": problem_id,
@@ -100,6 +136,7 @@ def transform_leetcode_data(input_file, output_file):
             "discussion_count": discussion_count,
             "likes": likes,
             "dislikes": dislikes,
+            "similar_questions": similar_questions,
             "url": f"https://leetcode.com/problems/{problem.get('titleSlug', '')}/",
             # Keep these useful fields but they won't be included in CSV
             "content": problem.get("content"),
@@ -138,7 +175,8 @@ def create_csv_from_json(json_file, csv_file):
     fieldnames = [
         "Id", "name", "difficulty", "acceptance_rate", 
         "total_submissions", "total_accepted", "tags",
-        "companies", "discussion_count", "likes", "dislikes", "url"
+        "companies", "discussion_count", "likes", "dislikes", 
+        "similar_questions", "url"
     ]
     
     with open(csv_file, 'w', encoding='utf-8', newline='') as f:
@@ -152,64 +190,69 @@ def create_csv_from_json(json_file, csv_file):
                 problem_copy["tags"] = ", ".join(problem_copy["tags"])
             if "companies" in problem_copy and isinstance(problem_copy["companies"], list):
                 problem_copy["companies"] = ", ".join(problem_copy["companies"])
+            if "similar_questions" in problem_copy and isinstance(problem_copy["similar_questions"], list):
+                problem_copy["similar_questions"] = " | ".join(problem_copy["similar_questions"])
                 
             writer.writerow(problem_copy)
     
     print(f"CSV data saved to {csv_file}")
 
 def main():
-    # Check if the marker file exists to identify the latest scrape
-    try:
-        with open("latest_scrape_file.txt", "r") as f:
-            latest_file = f.read().strip()
-        
-        if not os.path.exists(latest_file):
-            print(f"Latest file {latest_file} specified in marker does not exist")
-            print("Falling back to processing all files...")
-            use_marker = False
-        else:
-            print(f"Found marker file, will process only: {latest_file}")
-            use_marker = True
-    except:
-        print("No marker file found or could not read it")
-        print("Falling back to processing all files...")
-        use_marker = False
+    # Find latest JSON file based on modification time
+    json_files = glob.glob("leetcode_problems_*.json")
+    json_files = [f for f in json_files if not f.endswith('_transformed.json')]
     
-    if use_marker:
-        # Process only the latest file
-        input_file = latest_file
-        base_name = input_file.replace('.json', '')
-        output_file = f"{base_name}_transformed.json"
-        csv_file = f"{base_name}_transformed.csv"
-        
-        print(f"Processing {input_file}...")
-        transformed_data = transform_leetcode_data(input_file, output_file)
-        create_csv_from_json(output_file, csv_file)
-        print(f"Completed processing {input_file}")
-        print(f"Generated {output_file} and {csv_file}")
+    if not json_files:
+        print("No LeetCode problem JSON files found in the current directory")
+        return
+    
+    # Sort files by modification time, newest first
+    latest_file = max(json_files, key=os.path.getmtime)
+    
+    print(f"Found latest problem file: {latest_file}")
+    
+    # Extract ID range from filename
+    id_range_match = re.search(r'leetcode_problems_(\d+)_to_(\d+)', latest_file)
+    if id_range_match:
+        start_id = id_range_match.group(1)
+        end_id = id_range_match.group(2)
+        id_range = f"{start_id}_{end_id}"
     else:
-        # Fallback: get all JSON files with LeetCode problems
-        json_files = [f for f in os.listdir('.') if 
-                     (f.startswith('leetcode_latest_problems_') or f.startswith('leetcode_problems_')) 
-                     and f.endswith('.json')
-                     and not f.endswith('_transformed.json')]
-        
-        if not json_files:
-            print("No LeetCode JSON files found in the current directory")
-            return
-        
-        # Process each file
-        for input_file in json_files:
-            base_name = input_file.replace('.json', '')
-            output_file = f"{base_name}_transformed.json"
-            csv_file = f"{base_name}_transformed.csv"
-            
-            print(f"Processing {input_file}...")
-            transformed_data = transform_leetcode_data(input_file, output_file)
-            create_csv_from_json(output_file, csv_file)
-            print(f"Completed processing {input_file}")
-            print(f"Generated {output_file} and {csv_file}")
-            print("-" * 50)
+        id_range = "unknown_range"
+    
+    # Generate output filenames with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = f"leetcode_problems_{id_range}_{timestamp}_transformed.json"
+    csv_file = f"leetcode_problems_{id_range}_{timestamp}_transformed.csv"
+    
+    print(f"Processing {latest_file}...")
+    transformed_data = transform_leetcode_data(latest_file, output_file)
+    create_csv_from_json(output_file, csv_file)
+    print(f"Completed processing {latest_file}")
+    print(f"Generated {output_file} and {csv_file}")
+    
+    # Clean up old transformed files (optional)
+    # Delete all but the newest transformed files to avoid clutter
+    all_transformed_jsons = glob.glob("*_transformed.json")
+    all_transformed_csvs = glob.glob("*_transformed.csv")
+    
+    if len(all_transformed_jsons) > 3:  # Keep last 3 transformed JSONs
+        old_jsons = sorted(all_transformed_jsons, key=os.path.getmtime)[:-3]
+        for old_file in old_jsons:
+            print(f"Removing old transformed file: {old_file}")
+            try:
+                os.remove(old_file)
+            except Exception as e:
+                print(f"Error removing {old_file}: {e}")
+    
+    if len(all_transformed_csvs) > 3:  # Keep last 3 transformed CSVs
+        old_csvs = sorted(all_transformed_csvs, key=os.path.getmtime)[:-3]
+        for old_file in old_csvs:
+            print(f"Removing old transformed file: {old_file}")
+            try:
+                os.remove(old_file)
+            except Exception as e:
+                print(f"Error removing {old_file}: {e}")
 
 if __name__ == "__main__":
     main() 

@@ -4,13 +4,121 @@ import time
 from datetime import datetime
 
 class LeetcodeScraper:
-    def __init__(self):
+    def __init__(self, username=None, password=None, session_id=None):
         self.base_url = "https://leetcode.com"
         self.graphql_url = f"{self.base_url}/graphql"
+        self.login_url = f"{self.base_url}/accounts/login/"
         self.headers = {
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36",
         }
+        self.session = requests.Session()
+        
+        # Apply existing session cookie if provided
+        if session_id:
+            self.headers["Cookie"] = f"LEETCODE_SESSION={session_id}"
+            self.session.cookies.set("LEETCODE_SESSION", session_id, domain="leetcode.com", path="/")
+            print("Using provided session ID for authentication")
+            self.is_premium = self.check_premium_status()
+        # Log in if credentials are provided
+        elif username and password:
+            self.login(username, password)
+            self.is_premium = self.check_premium_status()
+        else:
+            print("No authentication credentials provided. Running in anonymous mode.")
+            self.is_premium = False
+    
+    def login(self, username, password):
+        """Log in to LeetCode with the provided credentials"""
+        print(f"Attempting to log in as {username}...")
+        
+        # First, get the CSRF token
+        response = self.session.get(self.login_url)
+        if response.status_code != 200:
+            print(f"Failed to get login page: {response.status_code}")
+            return False
+        
+        # Extract CSRF token
+        csrf_token = None
+        for line in response.text.split('\n'):
+            if 'csrfToken' in line:
+                try:
+                    # Try to extract token from JavaScript
+                    csrf_token = line.split('"')[1]
+                    break
+                except:
+                    pass
+        
+        if not csrf_token:
+            print("Could not find CSRF token, login will likely fail")
+        
+        # Prepare login data
+        login_data = {
+            'login': username,
+            'password': password,
+            'csrfmiddlewaretoken': csrf_token,
+            'next': '/'
+        }
+        
+        # Add CSRF token to headers
+        headers = {
+            'Referer': self.login_url,
+            'User-Agent': self.headers['User-Agent']
+        }
+        
+        # Attempt login
+        response = self.session.post(self.login_url, data=login_data, headers=headers)
+        
+        # Check if login was successful
+        if response.url != self.login_url and 'login' not in response.url:
+            print("Login successful!")
+            
+            # Update headers with new cookies
+            self.headers["Cookie"] = "; ".join([f"{c.name}={c.value}" for c in self.session.cookies])
+            
+            # Print session ID for future use
+            if 'LEETCODE_SESSION' in self.session.cookies:
+                session_id = self.session.cookies.get('LEETCODE_SESSION')
+                print(f"Your LEETCODE_SESSION ID: {session_id}")
+                print("You can use this session ID for future runs without login")
+            
+            return True
+        else:
+            print("Login failed!")
+            return False
+            
+    def check_premium_status(self):
+        """Check if the current user has LeetCode Premium"""
+        query = """
+        query {
+          userStatus {
+            isPremium
+            username
+          }
+        }
+        """
+        
+        payload = {
+            "query": query
+        }
+        
+        try:
+            response = self.session.post(self.graphql_url, headers=self.headers, json=payload)
+            if response.status_code == 200:
+                data = response.json()
+                if "data" in data and "userStatus" in data["data"]:
+                    is_premium = data["data"]["userStatus"].get("isPremium", False)
+                    username = data["data"]["userStatus"].get("username", "Anonymous")
+                    if is_premium:
+                        print(f"Logged in as {username} with Premium subscription")
+                    else:
+                        print(f"Logged in as {username} without Premium subscription")
+                    return is_premium
+        except Exception as e:
+            print(f"Error checking premium status: {e}")
+        
+        print("Could not verify premium status, assuming non-premium")
+        return False
     
     def get_all_problems(self):
         """Get basic information for all problems"""
@@ -33,7 +141,7 @@ class LeetcodeScraper:
         }
         
         print(f"Fetching problem list...")
-        response = requests.post(self.graphql_url, headers=self.headers, json=payload)
+        response = self.session.post(self.graphql_url, headers=self.headers, json=payload)
         
         print(f"Problem list response status code: {response.status_code}")
         
@@ -101,7 +209,7 @@ class LeetcodeScraper:
         }
         
         print(f"Fetching problem details: {title_slug}")
-        response = requests.post(self.graphql_url, headers=self.headers, json=payload)
+        response = self.session.post(self.graphql_url, headers=self.headers, json=payload)
         
         print(f"Problem detail response status code: {response.status_code}")
         
@@ -219,24 +327,42 @@ class LeetcodeScraper:
         return detailed_problems
 
 def main():
-    scraper = LeetcodeScraper()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='LeetCode Problem Scraper with Authentication Support')
+    parser.add_argument('--username', type=str, help='LeetCode username')
+    parser.add_argument('--password', type=str, help='LeetCode password')
+    parser.add_argument('--session', type=str, help='LeetCode session ID (alternative to username/password)')
+    parser.add_argument('--start-id', type=int, default=2200, help='Start of problem ID range')
+    parser.add_argument('--end-id', type=int, default=2210, help='End of problem ID range')
+    parser.add_argument('--latest', type=int, help='Number of latest problems to fetch (alternative to ID range)')
+    
+    args = parser.parse_args()
+    
+    # Initialize scraper with authentication if provided
+    scraper = LeetcodeScraper(
+        username=args.username,
+        password=args.password,
+        session_id=args.session
+    )
     
     print("Starting LeetCode Problem Scraper...")
     
     try:
-        # Choose one of the following methods:
-        
-        # Option 1: Get the latest 50 problems
-        # latest_problems = scraper.get_latest_problems(50)
-        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # filename = f"leetcode_latest_problems_{timestamp}.json"
-        
-        # Option 2: Get problems with IDs between 2200 and 2210 (only 10 problems for testing)
-        start_id = 2200
-        end_id = 2210
-        problems = scraper.get_problems_by_id_range(start_id, end_id)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"leetcode_problems_{start_id}_to_{end_id}_{timestamp}.json"
+        # Determine which problems to fetch
+        if args.latest:
+            print(f"Fetching the latest {args.latest} problems...")
+            problems = scraper.get_latest_problems(args.latest)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"leetcode_latest_problems_{args.latest}_{timestamp}.json"
+        else:
+            # Default to ID range
+            start_id = args.start_id
+            end_id = args.end_id
+            print(f"Fetching problems with IDs between {start_id} and {end_id}...")
+            problems = scraper.get_problems_by_id_range(start_id, end_id)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"leetcode_problems_{start_id}_to_{end_id}_{timestamp}.json"
         
         # Save to JSON file
         scraper.save_to_json(problems, filename)
@@ -247,8 +373,16 @@ def main():
         with open("latest_scrape_file.txt", "w") as f:
             f.write(filename)
             
+        # Log premium status for reference
+        premium_status = "premium account" if scraper.is_premium else "free account"
+        print(f"Data was fetched using a {premium_status}")
+        if not scraper.is_premium:
+            print("Note: Company tags data requires a premium account.")
+            
     except Exception as e:
         print(f"Error during scraping process: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main() 
